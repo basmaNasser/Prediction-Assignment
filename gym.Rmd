@@ -1,0 +1,165 @@
+---
+title: "Weight Lifting Exercise manner predicition"
+author: "Basma Nasser"
+date: "Friday, May 22, 2015"
+output: html_document
+---
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##Objective
+
+The goal of this project is to predict the manner in which 6  participants did the exercise. This is the "classe" variable in the training set. 
+
+what you think the expected out of sample error is,
+and why you made the choices you did. 
+ 
+
+###Data Preprocessing
+
+Read data training and testing data set then clean data with variables that predict the movement as below.
+
+
+```{r}
+library(caret)
+training_set <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+test_set <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+
+```
+
+1- remove unused columns which will not affect our analysis like user_name and timestamp variables
+
+2- remove variables which have near Zero variance which indicates that they do not contribute to the model.
+
+3- remove NA columns from data sets,to avoid low accuracy in the model.
+
+```{r}
+trainRemove <- grepl("^X|user_name|cvtd_timestamp", names(training_set))
+training_set <- training_set[, -trainRemove]
+
+#zero variance
+near_zero_var <- nearZeroVar(training_set)
+training_set <- training_set[, -near_zero_var]
+
+training_set <-training_set[,colSums(is.na(training_set)) == 0]
+```
+
+We create a smaller training set of 80% of the original set and 20% testing set
+```{r}
+#Set seed to reproduce the results
+set.seed(8483)
+
+#partition training data set
+dp <- createDataPartition(y = training_set$classe, p = 0.2, list = FALSE)
+
+sub_training <- training_set[dp, ]  
+
+sub_test <- training_set[-dp, ]  # test set for cross validation
+```
+
+From below graph we can see that Level A is the most frequent with more than 4000 occurrences while level D is the least frequent with about 2500 occurrences.
+
+```{r}
+
+library(ggplot2)
+
+qplot(sub_training$classe, main="Levels of the variable classe within the sub_training data set", xlab="classe levels", ylab="Frequency")
+
+
+```
+
+##Model creation
+
+1- Create model from new sub training dataset using rpart single tree. 
+
+```{r}
+
+##Fit the model using the single tree method 
+
+modelFit <- train(classe ~ ., data = sub_training, method = "rpart")
+
+```
+
+calculate model accuracy
+```{r}
+results <- modelFit$results
+round(max(results$Accuracy), 4) * 100
+```
+
+
+2- Create model from new sub training dataset using random forests. 
+
+```{r}
+
+##Fit the model using the Random Forest method 
+
+modelFit <- train(classe ~ ., data = sub_training, method = "rf")
+
+##Print the model details.
+print(modelFit$finalModel)
+```
+
+Variable importance according to the model
+
+```{r}
+varImp(modelFit)
+```
+
+calculate model accuracy
+
+```{r}
+results <- modelFit$results
+round(max(results$Accuracy), 4) * 100
+```
+
+random forest model provides us with a model that has a much higher accuracy: 98.79 %
+
+##Cross Validation
+
+Use modelFit to predict new values within the sub_test dataset that we created for cross-validation
+
+```{r}
+predicted <- predict(modelFit,sub_test)
+table(predicted, sub_test$classe)
+```
+As expected the predictions are not correct in all cases.
+
+##Expected out of sample error
+
+We can calculate the expected out of sample error based on the sub_test dataset that we created for cross-validation.
+
+```{r}
+confusionMatrix(predicted, sub_test$classe)
+```
+From the above confusion matrix details, you can find that the expected out of sample error is 3%. The 95% confidence inter is (0.9914, 0.9941).
+
+So, the estimated accuracy of the model is 99.29% and the estimated out-of-sample error is 0.07
+
+```{r}
+
+plot(modelFit$finalModel, main="Error rate over Rainforest Model")
+legend("topright", legend=unique(sub_test$classe), col=unique(as.numeric(sub_test$classe)), pch=20)
+```
+
+##Submission
+
+Apply prediction model to predict 20 different test cases.
+
+```{r}
+#remove NA columns from original test set
+test_set <-test_set[,colSums(is.na(test_set)) == 0]
+
+#predict new values within the original test set
+final_predicted <- predict(modelFit,test_set)
+
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+pml_write_files(final_predicted)
+
+```
